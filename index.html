@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whiteboard</title>
+    <style>
+        body {
+            background-color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background-color: #f5f5f5;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 0;
+            border-radius: 8px;
+            overflow: hidden
+        }
+
+        .canvas-holder {
+            border: 2px solid #1e3a8a;
+            margin-bottom: 0;
+            position: relative
+        }
+
+        canvas {
+            display: block;
+            background: white
+        }
+
+        .buttons {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px
+        }
+
+        button {
+            background-color: #1e3a8a;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+            transition: background-color 0.3s
+        }
+
+        button:hover {
+            background-color: #1e40af
+        }
+
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed
+        }
+
+        .tools {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background-color: #f8fafc;
+            border-bottom: 1px solid #e2e8f0
+        }
+
+        .hidden {
+            display: none !important
+        }
+
+        #textInput {
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #f8fafc
+        }
+
+        input[type="text"] {
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 200px
+        }
+
+        select {
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 14px
+        }
+
+        .recording {
+            background-color: #dc2626 !important
+        }
+
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-left: 10px
+        }
+
+        .error-status {
+            background-color: #fee2e2;
+            color: #dc2626
+        }
+
+        .success-status {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        #status {
+            min-width: 200px;
+            display: inline-block
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="canvas-holder">
+            <canvas id="whiteboard" width="800" height="600"></canvas>
+            <div class="buttons">
+                <button id="clear">Clear</button>
+                <button id="eraser">Eraser</button>
+            </div>
+        </div>
+        <div class="tools">
+            <div>
+                <label for="toolSelect">Tool:</label>
+                <select id="toolSelect">
+                    <option value="pen">Pen</option>
+                    <option value="text">Text</option>
+                </select>
+            </div>
+            <div>
+                <button id="save">Save</button>
+            </div>
+        </div>
+        <div id="textInput" class="hidden">
+            <input type="text" id="textBox" placeholder="Enter text">
+            <button id="text">Add Text</button>
+            <button id="speech">🎤 Speech</button>
+            <span id="status"></span>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.querySelector('#whiteboard')
+        const context = canvas.getContext('2d')
+        let isDrawing = false
+        let lastX, lastY
+        let tool = 'pen'
+        const statusElement = document.querySelector('#status')
+        const speechButton = document.querySelector('#speech')
+        let recognition = null
+        let isRecording = false
+        function updateStatus(message, isError = false) {
+            statusElement.textContent = message
+            statusElement.className = 'status ' + (isError ? 'error-status' : 'success-status')
+            setTimeout(function () {
+                statusElement.textContent = ''
+                statusElement.className = 'status'
+            }, 5000)
+        }
+        try {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+            if (SpeechRecognition) {
+                recognition = new SpeechRecognition()
+                recognition.continuous = false
+                recognition.interimResults = false
+                recognition.lang = 'en-US'
+                recognition.onstart = function () {
+                    updateStatus('Listening...')
+                    speechButton.classList.add('recording')
+                }
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript
+                    document.querySelector('#textBox').value = transcript
+                    updateStatus('Text captured successfully!')
+                    stopRecording()
+                }
+                recognition.onerror = function (event) {
+                    let errorMessage = 'An error occurred'
+                    if (event.error == 'network') {
+                        errorMessage = 'Network error. Please check your internet connection.'
+                    } else if (event.error == 'not-allowed') {
+                        errorMessage = 'Microphone access denied. Please allow microphone access.'
+                    } else if (event.error == 'no-speech') {
+                        errorMessage = 'No speech detected. Please try again.'
+                    } else if (event.error == 'audio-capture') {
+                        errorMessage = 'No microphone detected. Please check your microphone.'
+                    } else {
+                        errorMessage = `Error: ${event.error}. Please try again.`
+                    }
+                    updateStatus(errorMessage, true)
+                    stopRecording()
+                }
+                recognition.onend = function () {
+                    stopRecording()
+                }
+            } else {
+                speechButton.style.display = 'none'
+                updateStatus('Speech recognition not supported in this browser', true)
+            }
+        } catch (error) {
+            console.error('Speech recognition setup error:', error)
+            speechButton.style.display = 'none'
+            updateStatus('Speech recognition not available', true)
+        }
+        function startRecording() {
+            if (!recognition) {
+                updateStatus('Speech recognition not available', true)
+                return
+            }
+            if (!navigator.onLine) {
+                updateStatus('No internet connection. Please check your connection.', true)
+                return
+            }
+            try {
+                recognition.start()
+                isRecording = true
+            } catch (error) {
+                console.error('Error starting recognition:', error)
+                updateStatus('Error starting recognition. Please try again.', true)
+                stopRecording()
+            }
+        }
+
+        function stopRecording() {
+            if (!recognition) return
+            try {
+                recognition.stop()
+            } catch (error) {
+                console.error('Error stopping recognition:', error)
+            }
+            isRecording = false
+            speechButton.classList.remove('recording')
+        }
+        window.addEventListener('online', function () {
+            speechButton.disabled = false
+            updateStatus('Network connection restored.')
+        })
+        window.addEventListener('offline', function () {
+            speechButton.disabled = true
+            updateStatus('Network connection lost. Speech recognition unavailable.', true)
+        })
+        document.querySelector('#toolSelect').addEventListener('change', function (e) {
+            tool = e.target.value
+            if (tool === 'pen') {
+                context.beginPath()
+            }
+
+            if (tool === 'text') {
+                document.querySelector('#textInput').classList.remove('hidden')
+            } else {
+                document.querySelector('#textInput').classList.add('hidden')
+            }
+        });
+
+        function startPosition(e) {
+            isDrawing = true
+            context.beginPath()
+            context.moveTo(e.offsetX, e.offsetY)
+            [lastX, lastY] = [e.offsetX, e.offsetY]
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+
+            const { offsetX, offsetY } = e
+
+
+            if (tool === 'pen') {
+                context.lineWidth = 2
+                context.lineCap = 'round'
+                context.lineJoin = 'round'
+                context.strokeStyle = '#000'
+
+                context.lineTo(offsetX, offsetY)
+                context.stroke()
+                context.beginPath()
+                context.moveTo(offsetX, offsetY)
+
+
+            } else if (tool === 'eraser') {
+                const eraserSize = 20;
+                context.clearRect(
+                    offsetX - eraserSize / 2,
+                    offsetY - eraserSize / 2,
+                    eraserSize,
+                    eraserSize
+                );
+            }
+            [lastX, lastY] = [offsetX, offsetY]
+        }
+
+        function endPosition() {
+            isDrawing = false
+            context.beginPath()
+        }
+
+        canvas.addEventListener('mousedown', startPosition)
+        canvas.addEventListener('mousemove', draw)
+        canvas.addEventListener('mouseup', endPosition)
+        canvas.addEventListener('mouseout', endPosition)
+
+        document.querySelector('#clear').addEventListener('click', function () {
+            context.clearRect(0, 0, canvas.width, canvas.height)
+        })
+
+        document.querySelector('#eraser').addEventListener('click', function () {
+            tool = 'eraser'
+            document.querySelector('#toolSelect').value = 'pen'
+            document.querySelector('#textInput').classList.add('hidden')
+        })
+
+        document.querySelector('#text').addEventListener('click', function () {
+            const text = document.querySelector('#textBox').value
+            if (text) {
+                context.font = '16px Arial'
+                context.fillStyle = '#000'
+                context.fillText(text, lastX || 50, lastY || 50)
+                document.querySelector('#textBox').value = ''
+            }
+        })
+
+        speechButton.addEventListener('click', function () {
+            if (!isRecording) {
+                startRecording()
+            } else {
+                stopRecording()
+            }
+        })
+
+        document.querySelector('#save').addEventListener('click', function () {
+            const image = canvas.toDataURL('image/png')
+            const link = document.createElement('a')
+            link.href = image
+            link.download = 'whiteboard.png'
+            link.click()
+        })
+
+        if (!navigator.onLine) {
+            speechButton.disabled = true
+            updateStatus('No internet connection. Speech recognition unavailable.', true)
+        }
+    </script>
+</body>
+
+</html>
